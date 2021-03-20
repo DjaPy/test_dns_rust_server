@@ -1,7 +1,7 @@
 use std::net::{Ipv4Addr, UdpSocket, Ipv6Addr};
 
 type Error = Box<dyn std::error::Error>;
-type Result<T> = std::result::Result<T, Error>;
+type CommonResult<T> = std::result::Result<T, Error>;
 
 pub struct BytePacketBuffer {
     pub buf: [u8; 512],
@@ -24,21 +24,21 @@ impl BytePacketBuffer {
     }
 
     /// Step the buffer position forward a specific number of steps
-    fn step(&mut self, steps: usize) -> Result<()> {
+    fn step(&mut self, steps: usize) -> CommonResult<()> {
         self.pos += steps;
 
         Ok(())
     }
 
     /// Change the buffer position
-    fn seek(&mut self, pos: usize) -> Result<()> {
+    fn seek(&mut self, pos: usize) -> CommonResult<()> {
         self.pos = pos;
 
         Ok(())
     }
 
     /// Read a single byte and move the position one step forward
-    fn read(&mut self) -> Result<u8> {
+    fn read(&mut self) -> CommonResult<u8> {
         if self.pos >= 512 {
             return Err("End of buffer".into());
         }
@@ -49,7 +49,7 @@ impl BytePacketBuffer {
     }
 
     /// Get a single byte, without changing the buffer position
-    fn get(&mut self, pos: usize) -> Result<u8> {
+    fn get(&mut self, pos: usize) -> CommonResult<u8> {
         if pos >= 512 {
             return Err("End of buffer".into());
         }
@@ -57,7 +57,7 @@ impl BytePacketBuffer {
     }
 
     /// Get a range of bytes
-    fn get_range(&mut self, start: usize, len: usize) -> Result<&[u8]> {
+    fn get_range(&mut self, start: usize, len: usize) -> CommonResult<&[u8]> {
         if start + len >= 512 {
             return Err("End of buffer".into());
         }
@@ -65,14 +65,14 @@ impl BytePacketBuffer {
     }
 
     /// Read two bytes, stepping two steps forward
-    fn read_u16(&mut self) -> Result<u16> {
+    fn read_u16(&mut self) -> CommonResult<u16> {
         let res = ((self.read()? as u16) << 8) | (self.read()? as u16);
 
         Ok(res)
     }
 
     /// Read four bytes, stepping four steps forward
-    fn read_u32(&mut self) -> Result<u32> {
+    fn read_u32(&mut self) -> CommonResult<u32> {
         let res = ((self.read()? as u32) << 24)
             | ((self.read()? as u32) << 16)
             | ((self.read()? as u32) << 8)
@@ -86,7 +86,7 @@ impl BytePacketBuffer {
     /// The tricky part: Reading domain names, taking labels into consideration.
     /// Will take something like [3]www[6]google[3]com[0] and append
     /// www.google.
-    fn read_qname(&mut self, outstr: &mut String) -> Result<()> {
+    fn read_qname(&mut self, outstr: &mut String) -> CommonResult<()> {
         // Since we might encounter jumps, we'll keep track of our position
         // locally as opposed to using the position within the struct. This
         // allows us to move the shared position to a point past our current
@@ -170,7 +170,7 @@ impl BytePacketBuffer {
         Ok(())
     }
 
-    fn write(&mut self, val: u8) -> Result<()> {
+    fn write(&mut self, val: u8) -> CommonResult<()> {
         if self.pos >= 512 {
             return Err("End of buffer".into())
         }
@@ -179,20 +179,20 @@ impl BytePacketBuffer {
         Ok(())
     }
 
-    fn write_u8(&mut self, val: u8) -> Result<()> {
+    fn write_u8(&mut self, val: u8) -> CommonResult<()> {
         self.write(val)?;
 
         Ok(())
     }
 
-    fn write_u16(&mut self, val:u16) -> Result<()> {
+    fn write_u16(&mut self, val:u16) -> CommonResult<()> {
         self.write((val >> 8) as u8)?;
         self.write((val & 0xFF) as u8)?;
 
         Ok(())
     }
 
-    fn write_u32(&mut self, val: u32) -> Result<()> {
+    fn write_u32(&mut self, val: u32) -> CommonResult<()> {
         self.write(((val >> 24) & 0xFF) as u8)?;
         self.write(((val >> 16) & 0xFF) as u8)?;
         self.write(((val >> 8) & 0xFF) as u8)?;
@@ -201,7 +201,7 @@ impl BytePacketBuffer {
         Ok(())
     }
 
-    fn write_qname(&mut self, qname: &str) -> Result<()> {
+    fn write_qname(&mut self, qname: &str) -> CommonResult<()> {
         for label in qname.split('.') {
             let len = label.len();
             if len > 0x3f {
@@ -219,13 +219,13 @@ impl BytePacketBuffer {
         Ok(())
     }
 
-    fn set(&mut self, pos: usize, val: u8) -> Result<()> {
+    fn set(&mut self, pos: usize, val: u8) -> CommonResult<()> {
         self.buf[pos] = val;
 
         Ok(())
     }
 
-    fn set_u16(&mut self, pos: usize, val: u16) -> Result<()> {
+    fn set_u16(&mut self, pos: usize, val: u16) -> CommonResult<()> {
         self.set(pos, (val >> 8) as u8)?;
         self.set(pos + 1, (val & 0xFF) as u8)?;
 
@@ -303,7 +303,7 @@ impl DnsHeader {
         }
     }
 
-    pub fn read(&mut self, buffer: &mut BytePacketBuffer) -> Result<()> {
+    pub fn read(&mut self, buffer: &mut BytePacketBuffer) -> CommonResult<()> {
         self.id = buffer.read_u16()?;
 
         let flags = buffer.read_u16()?;
@@ -330,7 +330,7 @@ impl DnsHeader {
         Ok(())
     }
 
-    pub fn write(&self, buffer: &mut BytePacketBuffer) -> Result<()> {
+    pub fn write(&self, buffer: &mut BytePacketBuffer) -> CommonResult<()> {
         buffer.write_u16(self.id)?;
 
         buffer.write_u8(
@@ -403,7 +403,7 @@ impl DnsQuestion {
         DnsQuestion { name, qtype }
     }
 
-    pub fn read(&mut self, buffer: &mut BytePacketBuffer) -> Result<()> {
+    pub fn read(&mut self, buffer: &mut BytePacketBuffer) -> CommonResult<()> {
         buffer.read_qname(&mut self.name)?;
         self.qtype = QueryType::from_num(buffer.read_u16()?); // qtype
         let _ = buffer.read_u16()?; // class
@@ -411,7 +411,7 @@ impl DnsQuestion {
         Ok(())
     }
 
-    pub fn write(&self, buffer: &mut BytePacketBuffer) -> Result<()> {
+    pub fn write(&self, buffer: &mut BytePacketBuffer) -> CommonResult<()> {
         buffer.write_qname(&self.name)?;
 
         let typenum = self.qtype.to_num();
@@ -460,7 +460,7 @@ pub enum DnsRecord {
 }
 
 impl DnsRecord {
-    pub fn read(buffer: &mut BytePacketBuffer) -> Result<DnsRecord> {
+    pub fn read(buffer: &mut BytePacketBuffer) -> CommonResult<DnsRecord> {
         let mut domain = String::new();
         buffer.read_qname(&mut domain)?;
 
@@ -553,7 +553,7 @@ impl DnsRecord {
         }
     }
 
-    pub fn write(&self, buffer: &mut BytePacketBuffer) -> Result<usize> {
+    pub fn write(&self, buffer: &mut BytePacketBuffer) -> CommonResult<usize> {
         let start_pos = buffer.pos();
 
         match *self {
@@ -670,7 +670,7 @@ impl DnsPacket {
         }
     }
 
-    pub fn from_buffer(buffer: &mut BytePacketBuffer) -> Result<DnsPacket> {
+    pub fn from_buffer(buffer: &mut BytePacketBuffer) -> CommonResult<DnsPacket> {
         let mut result = DnsPacket::new();
         result.header.read(buffer)?;
 
@@ -696,7 +696,7 @@ impl DnsPacket {
         Ok(result)
     }
 
-    pub fn write(&mut self, buffer: &mut BytePacketBuffer) -> Result<()> {
+    pub fn write(&mut self, buffer: &mut BytePacketBuffer) -> CommonResult<()> {
         self.header.questions = self.questions.len() as u16;
         self.header.answers = self.answers.len() as u16;
         self.header.authoritative_entries = self.resources.len() as u16;
@@ -721,10 +721,7 @@ impl DnsPacket {
     }
 }
 
-fn main() -> Result<()> {
-    let qname = "www.yahoo.com";
-    let qtype = QueryType::AAAA;
-
+fn lookup(qname: &str, qtype: QueryType) -> CommonResult<DnsPacket> {
     let server = ("8.8.8.8", 53);
 
     let socket = UdpSocket::bind(("0.0.0.0", 43210))?;
@@ -741,27 +738,70 @@ fn main() -> Result<()> {
 
     let mut req_buffer = BytePacketBuffer::new();
     packet.write(&mut req_buffer)?;
-
     socket.send_to(&req_buffer.buf[0..req_buffer.pos], server)?;
 
     let mut res_buffer = BytePacketBuffer::new();
     socket.recv_from(&mut res_buffer.buf)?;
+    DnsPacket::from_buffer(&mut res_buffer)
+}
 
-    let res_packet = DnsPacket::from_buffer(&mut res_buffer)?;
-    println!("{:#?}", res_packet.header);
+fn handle_query(socket: &UdpSocket) -> CommonResult<()> {
+    let mut req_buffer = BytePacketBuffer::new();
 
-    for q in res_packet.questions {
-        println!("{:#?}", q);
+    let (_, src) = socket.recv_from(&mut req_buffer.buf)?;
+
+    let mut request = DnsPacket::from_buffer(&mut req_buffer)?;
+
+    let mut packet = DnsPacket::new();
+    packet.header.id = request.header.id;
+    packet.header.recursion_desired = true;
+    packet.header.recursion_available = true;
+    packet.header.response = true;
+
+    if let Some(question) = request.questions.pop() {
+        println!("Received query: {:?}", question );
+
+        if let Ok(result) = lookup(&question.name, question.qtype) {
+            packet.questions.push(question);
+            packet.header.rescode = result.header.rescode;
+
+            for rec in result.answers {
+                println!("Answer: {:?}", rec);
+                packet.answers.push(rec);
+            }
+            for rec in result.authorities {
+                println!("Authority: {:?}", rec);
+                packet.authorities.push(rec);
+
+            }
+            for rec in result.resources {
+                println!("Resource: {:?}", rec);
+                packet.resources.push(rec);
+            }
+        } else {
+            packet.header.rescode = ResultCode::SERVFAIL;
+        }
+    } else {
+        packet.header.rescode = ResultCode::FORMERR;
     }
-    for rec in res_packet.answers {
-        println!("{:#?}", rec);
-    }
-    for rec in res_packet.authorities {
-        println!("{:#?}", rec);
-    }
-    for rec in res_packet.resources {
-        println!("{:#?}", rec);
-    }
+    let mut res_buffer = BytePacketBuffer::new();
+    packet.write(&mut res_buffer)?;
+
+    let len = res_buffer.pos();
+    let data = res_buffer.get_range(0, len)?;
+
+    socket.send_to(data, src)?;
 
     Ok(())
+}
+
+fn main() -> CommonResult<()> {
+    let socket = UdpSocket::bind(("0.0.0.0", 2053))?;
+
+    loop {
+        match handle_query(&socket) {
+            Ok(_) => {},
+            Err(e) => eprintln!("An error occured: {}", e),
+        }
+    }
 }
